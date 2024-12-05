@@ -2,55 +2,71 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const app = express();
+const mongoose = require('mongoose');
 
-// Basic Configuration
+const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(cors());
+// MongoDB Configuration
+const uri = process.env.MONGO_URI;
+mongoose.connect(uri)
+  .then(() => console.log('Connected to MongoDB'))
+  .catch(err => console.error('Connection error:', err));
 
+// Middleware
+app.use(cors());
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
 app.use('/public', express.static(`${process.cwd()}/public`));
 
-app.get('/', function(req, res) {
+// Schema and Model
+const urlSchema = new mongoose.Schema({
+  original_url: { type: String, required: true },
+  short_url:  { type: String, unique: true }
+});
+const Url = mongoose.model('Url', urlSchema);
+
+// Routes
+app.get('/', (req, res) => {
   res.sendFile(process.cwd() + '/views/index.html');
 });
 
-// Your first API endpoint
-// app.get('/api/shorturl', function(req, res) {
-//   res.json({ greeting: 'hello API' });
-// });
-app.use(bodyParser.urlencoded({extended: true}));
-app.use(bodyParser.json());
-
-const urls = {1: "https://forum.freecodecamp.org"};
-
 app.post('/api/shorturl', async (req, res) => {
-  let urlID = 1;
-  const url = req.body.url; // Access the URL from the request body
-  let existenceChecker = Object.keys(urls).includes(urlID.toString);
-  if(existenceChecker)
-    {
-      while (existenceChecker) {
-    urlID = urlID+1;
-    existenceChecker = Object.keys(urls).includes(urlID.toString());
-  }}
-  urls[urlID] = url;
-  // console.log("URLS: ", urls);
-  res.json({ "original_url": url, "short_url":  urlID}); // Respond with the received URL
+  const { url } = req.body;
+  const urlRegex = /^https?:\/\/(www\.)?[\w-]+(\.[\w-]+)+$/ ;
+  if (!urlRegex.test(url)){
+    res.json({ error: 'invalid url'});
+    return;
+  }
+  try {
+    const count = await Url.countDocuments();
+    const newUrl = new Url({ original_url: url, short_url: count + 1 });
+    await newUrl.save();
+
+    res.json({original_url: `${url}`, short_url: newUrl.short_url});
+  } catch (error) {
+    console.error('Error creating short URL:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
-app.get('/api/shorturl/:short',
-  (req, res) => {
-    const shortUrlRequested = req.params.short;
-    const {longUrl, shortUrl} = req.body; 
-    // console.log("Long URL: ", longUrl);
-    res.redirect(longUrl);
-    console.log('longUrl :>> ', longUrl);
-    // console.log(req.body);
+app.get('/api/shorturl/:short', async (req, res) => {
+  try {
+    const shortUrl = req.params.short;
+    const urlEntry = await Url.findOne({ short_url: shortUrl });
+
+    if (urlEntry) {
+      return res.redirect(urlEntry.original_url);
+    }
+
+    res.status(404).json({ error: 'URL not found' });
+  } catch (error) {
+    console.error('Error retrieving URL:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
+});
 
-)
-
-app.listen(port, function() {
+// Start Server
+app.listen(port, () => {
   console.log(`Listening on port ${port}`);
 });
