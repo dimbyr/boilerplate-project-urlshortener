@@ -43,7 +43,10 @@ app.post('/api/shorturl', async (req, res) => {
     const newUrl = new Url({ original_url: url, short_url: count + 1 });
     await newUrl.save();
 
-    res.json({original_url: `${url}`, short_url: newUrl.short_url});
+    res.json(
+      newUrl
+      // {original_url: `${url}`, short_url: newUrl.short_url}
+    );
   } catch (error) {
     console.error('Error creating short URL:', error);
     res.status(500).json({ error: 'Internal server error' });
